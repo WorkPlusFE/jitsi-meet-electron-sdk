@@ -1,4 +1,3 @@
-const { RemoteControl, RemoteControlMain } = require('./remotecontrol');
 const { setupScreenSharingRender, setupScreenSharingMain } = require('./screensharing');
 const {
     cleanupAlwaysOnTopMain,
@@ -18,8 +17,6 @@ const {
 } = require('./popupsconfig');
 
 module.exports = {
-    RemoteControl,
-    RemoteControlMain,
     cleanupAlwaysOnTopMain,
     cleanupPowerMonitorMain,
     setupScreenSharingRender,

@@ -1,8 +1,24 @@
 {
-  "name": "@jitsi/electron-sdk",
+  "name": "@w6s/jitsi-electron-sdk",
   "version": "6.0.50",
-  "description": "Utilities for jitsi-meet-electron project",
+  "description": "WorkPlus fork of the Jitsi Meet Electron SDK",
   "main": "index.js",
+  "files": [
+    "alwaysontop/",
+    "helpers/",
+    "node_addons/",
+    "popupsconfig/",
+    "powermonitor/",
+    "prebuilds/",
+    "remotecontrol/",
+    "screensharing/",
+    "binding.gyp",
+    "index.js",
+    "install.js"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "lint": "eslint .",
     "test": "mocha",
@@ -15,7 +31,10 @@
   "pre-commit": [
     "lint"
   ],
-  "repository": "https://github.com/jitsi/jitsi-meet-electron-sdk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WorkPlusFE/jitsi-meet-electron-sdk.git"
+  },
   "keywords": [
     "jingle",
     "webrtc",

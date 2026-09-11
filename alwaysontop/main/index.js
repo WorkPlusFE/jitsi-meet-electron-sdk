@@ -1,3 +1,5 @@
+/* global process */
+
 const crypto = require('crypto');
 const electron = require('electron');
 const os = require('os');
@@ -39,6 +41,13 @@ let isIntersecting;
  */
 let _existingWindowOpenHandler;
 
+let frameBridgeEnabled = false;
+let framePumpTimer;
+let framePumpBusy = false;
+
+const FRAME_INTERVAL = 160;
+const MIN_FRAME_BRIDGE_ELECTRON_MAJOR = 39;
+
 /**
  * The aot window instance
  */
@@ -47,6 +56,130 @@ const getAotWindow = () => BrowserWindow.getAllWindows().find(win => {
     const frameName = win.webContents.mainFrame.name || '';
     return frameName === `${AOT_WINDOW_NAME}-${aotMagic}`;
 });
+
+const FRAME_SCRIPT = `(() => {
+    const video = document.getElementById('largeVideo');
+    const style = video && getComputedStyle(video);
+    const hasVideo = Boolean(video
+        && video.readyState >= 2
+        && video.videoWidth
+        && video.videoHeight
+        && style.display !== 'none'
+        && style.visibility !== 'hidden'
+        && Number(style.opacity || 1) !== 0);
+
+    if (!hasVideo) {
+        return { dataUrl: null, hasVideo: false };
+    }
+
+    const width = 640;
+    const height = 360;
+    let canvas = window.__electronAotCanvas;
+
+    if (!canvas) {
+        canvas = document.createElement('canvas');
+        window.__electronAotCanvas = canvas;
+    }
+
+    canvas.width = width;
+    canvas.height = height;
+
+    const sourceRatio = video.videoWidth / video.videoHeight;
+    const targetRatio = width / height;
+    let sx = 0;
+    let sy = 0;
+    let sw = video.videoWidth;
+    let sh = video.videoHeight;
+
+    if (sourceRatio > targetRatio) {
+        sw = video.videoHeight * targetRatio;
+        sx = (video.videoWidth - sw) / 2;
+    } else if (sourceRatio < targetRatio) {
+        sh = video.videoWidth / targetRatio;
+        sy = (video.videoHeight - sh) / 2;
+    }
+
+    const context = canvas.getContext('2d', { alpha: false });
+
+    context.fillStyle = '#000';
+    context.fillRect(0, 0, width, height);
+    context.drawImage(video, sx, sy, sw, sh, 0, 0, width, height);
+
+    return {
+        dataUrl: canvas.toDataURL('image/jpeg', 0.72),
+        hasVideo: true
+    };
+})()`;
+
+const getElectronMajor = () => Number.parseInt(process.versions.electron, 10);
+
+const supportsFrameBridge = () => {
+    const mainFrame = mainWindow && mainWindow.webContents.mainFrame;
+
+    return getElectronMajor() >= MIN_FRAME_BRIDGE_ELECTRON_MAJOR
+        && mainFrame
+        && Array.isArray(mainFrame.frames);
+};
+
+const getJitsiFrame = () => {
+    if (!supportsFrameBridge() || mainWindow.isDestroyed()) return undefined;
+
+    return mainWindow.webContents.mainFrame.frames.find(frame =>
+        frame.name && frame.name.startsWith('jitsiConferenceFrame'));
+};
+
+const pushVideoFrame = async () => {
+    if (!frameBridgeEnabled || framePumpBusy) return;
+
+    const aotWindow = getAotWindow();
+    const jitsiFrame = getJitsiFrame();
+
+    if (!windowExists(aotWindow) || !jitsiFrame) return;
+
+    framePumpBusy = true;
+
+    try {
+        const frame = await jitsiFrame.executeJavaScript(FRAME_SCRIPT);
+
+        if (frame && windowExists(aotWindow)) {
+            await aotWindow.webContents.executeJavaScript(
+                `window.__setAotFrame && window.__setAotFrame(${JSON.stringify(frame)})`);
+        }
+    } catch (error) {
+        logError(error);
+    } finally {
+        framePumpBusy = false;
+    }
+};
+
+const stopFramePump = () => {
+    if (framePumpTimer) {
+        clearInterval(framePumpTimer);
+        framePumpTimer = undefined;
+    }
+};
+
+const startFramePump = () => {
+    if (!frameBridgeEnabled || framePumpTimer) return;
+
+    pushVideoFrame();
+    framePumpTimer = setInterval(pushVideoFrame, FRAME_INTERVAL);
+};
+
+const setFrameBridgeEnabled = enabled => {
+    frameBridgeEnabled = Boolean(enabled && supportsFrameBridge());
+
+    if (!frameBridgeEnabled) {
+        stopFramePump();
+        return;
+    }
+
+    const aotWindow = getAotWindow();
+
+    if (windowExists(aotWindow) && aotWindow.isVisible()) {
+        startFramePump();
+    }
+};
 
 /**
  * Sends an update state event to renderer process
@@ -84,6 +217,10 @@ const handleWindowCreated = window => {
 
     aotWindow.once('ready-to-show', () => {
         aotWindow.show();
+
+        if (frameBridgeEnabled) {
+            startFramePump();
+        }
     });
 
     aotWindow.webContents.on('error', error => {
@@ -143,6 +280,10 @@ const showAot = () => {
     if (windowExists(aotWindow)) {
         state = STATES.SHOW;
         aotWindow.showInactive();
+
+        if (frameBridgeEnabled) {
+            startFramePump();
+        }
     } else {
         state = STATES.OPEN;
         data.aotMagic = aotMagic;
@@ -186,6 +327,7 @@ const removeMainWindowHandlers = () => {
  * Hides the aot window
  */
  const hideWindow = () => {
+    stopFramePump();
     const aotWindow = getAotWindow();
 
     if (windowExists(aotWindow)) {
@@ -199,6 +341,7 @@ const removeMainWindowHandlers = () => {
  * Shows the aot window
  */
 const closeWindow = () => {
+    stopFramePump();
     const aotWindow = getAotWindow();
 
     if (windowExists(aotWindow)) {
@@ -218,6 +361,9 @@ const onAotEvent = (event, { name, ...rest }) => {
     switch (name) {
         case EVENTS.UPDATE_STATE:
             handleStateChange(rest.state);
+            break;
+        case EVENTS.SET_FRAME_BRIDGE:
+            setFrameBridgeEnabled(rest.enabled);
             break;
         case EVENTS.MOVE:
             handleMove(rest.position, rest.initialSize);
@@ -289,6 +435,9 @@ const handleMove = (position, initialSize) => {
 };
 
 const cleanup = () => {
+    stopFramePump();
+    frameBridgeEnabled = false;
+    framePumpBusy = false;
     ipcMain.removeListener(EVENTS_CHANNEL, onAotEvent);
 };
 

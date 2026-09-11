@@ -4,11 +4,53 @@ SDK for integrating Jitsi Meet into Electron applications.
 
 Supported Electron versions: >= 16.
 
+## WorkPlus fork 说明
+
+本包是 `@jitsi/electron-sdk@6.0.50` 的 WorkPlus 维护分支，npm 包名为
+`@w6s/jitsi-electron-sdk`。目前的核心改动是修复 Electron 39 发布包中的
+Always On Top（会议悬浮小窗）黑屏问题。
+
+### 改动原因
+
+WorkPlus 开发环境通过 `http://localhost` 加载会议页面时，Jitsi SDK 原有的
+Always On Top 实现可以正常显示；macOS 发布包通过 `file://` 加载会议页面时，
+Electron 39/Chromium 会将远程 Jitsi iframe 隔离到独立 renderer process。
+
+原实现通过 Jitsi iframe API 的私有方法直接读取 iframe 中的 `document`、
+`largeVideo` 和悬浮窗资源。在上述发布环境中，这些访问会抛出
+`SecurityError: Blocked a frame with origin "file://" from accessing a cross-origin frame`。
+因此悬浮窗本身和本地关闭按钮能够创建，但会议界面、用户头像和视频内容无法完成初始化。
+
+这个问题发生在 Electron 客户端的跨 iframe DOM 访问层，不需要调整 Jitsi 服务端。
+
+### 兼容方式
+
+| Electron 版本/运行环境 | Always On Top 路径 |
+| --- | --- |
+| Electron 22、28 | 保留上游的 `MediaStream/srcObject` 实现 |
+| Electron 39+，可以访问 Jitsi iframe | 继续使用上游实现，例如本地 HTTP 开发环境 |
+| Electron 39+，出现跨域 `SecurityError` | 自动切换到 WorkPlus frame bridge |
+
+frame bridge 只在 Electron 39+ 且原生访问实际失败时开启：
+
+1. Renderer 先探测 `_getAlwaysOnTopResources()` 和会议视频元素是否可以访问。
+2. 探测成功时完全沿用上游逻辑，避免影响 Electron 22/28 和正常的 Electron 39 开发环境。
+3. 探测出现跨域 `SecurityError` 时，主进程通过 `WebFrameMain.executeJavaScript()`
+   在 Jitsi iframe 自己的 renderer process 中读取 `largeVideo`。
+4. 视频以 640 × 360 JPEG 帧、160 ms 间隔传递到悬浮窗；悬浮窗继续复用 Jitsi
+   提供的界面资源和原始 API 事件，因此关闭、返回主窗口等按钮仍然可操作。
+5. bridge 同步 `hasVideo` 状态并触发 `largeVideoChanged`，确保无视频时正常显示用户头像，
+   有视频时显示活动视频画面。
+6. 悬浮窗隐藏、关闭或会议销毁时停止帧循环，避免后台持续抓帧。
+
+Electron 22 和 28 已验证使用原实现；Electron 39 发布态使用兼容 bridge。
+后续升级 Electron 或 Jitsi SDK 时，应同时验证 HTTP 开发入口和 `file://` 发布入口。
+
 ## Installation
 
 Install from npm:
 
-    npm install @jitsi/electron-sdk
+    npm install @w6s/jitsi-electron-sdk
 
 Note: This package contains native code on Windows for the remote control module. Binary prebuilds are packaged with prebuildify as part of the npm package.
 
@@ -25,7 +67,7 @@ In the **render** electron process of the window where Jitsi Meet is displayed:
 ```Javascript
 const {
     RemoteControl
-} = require("@jitsi/electron-sdk");
+} = require("@w6s/jitsi-electron-sdk");
 
 // iframe - the Jitsi Meet iframe
 const remoteControl = new RemoteControl(iframe);
@@ -43,7 +85,7 @@ In the **main** electron process:
 ```Javascript
 const {
     RemoteControlMain
-} = require("@jitsi/electron-sdk");
+} = require("@w6s/jitsi-electron-sdk");
 
 // jitsiMeetWindow - The BrowserWindow instance of the window where Jitsi Meet is loaded.
 const remoteControl = new RemoteControlMain(mainWindow);
@@ -61,7 +103,7 @@ In the **render** electron process of the window where Jitsi Meet is displayed:
 ```Javascript
 const {
     setupScreenSharingRender
-} = require("@jitsi/electron-sdk");
+} = require("@w6s/jitsi-electron-sdk");
 
 // api - The Jitsi Meet iframe api object.
 setupScreenSharingRender(api);
@@ -71,7 +113,7 @@ In the **main** electron process:
 ```Javascript
 const {
     setupScreenSharingMain
-} = require("@jitsi/electron-sdk");
+} = require("@w6s/jitsi-electron-sdk");
 
 // jitsiMeetWindow - The BrowserWindow instance of the window where Jitsi Meet is loaded.
 // appName - Application name which will be displayed inside the content sharing tracking window
@@ -95,7 +137,7 @@ In the **main** electron process:
 ```Javascript
 const {
     setupAlwaysOnTopMain
-} = require("@jitsi/electron-sdk");
+} = require("@w6s/jitsi-electron-sdk");
 
 // jitsiMeetWindow - The BrowserWindow instance
 // of the window where Jitsi Meet is loaded.
@@ -106,7 +148,7 @@ In the **render** electron process of the window where Jitsi Meet is displayed:
 ```Javascript
 const {
     setupAlwaysOnTopRender
-} = require("@jitsi/electron-sdk");
+} = require("@w6s/jitsi-electron-sdk");
 
 const api = new JitsiMeetExternalAPI(...);
 const alwaysOnTop = setupAlwaysOnTopRender(api);
@@ -130,7 +172,7 @@ In the **main** electron process:
 ```Javascript
 const {
     setupPowerMonitorMain
-} = require("@jitsi/electron-sdk");
+} = require("@w6s/jitsi-electron-sdk");
 
 // jitsiMeetWindow - The BrowserWindow instance
 // of the window where Jitsi Meet is loaded.
@@ -141,7 +183,7 @@ In the **render** electron process of the window where Jitsi Meet is displayed:
 ```Javascript
 const {
     setupPowerMonitorRender
-} = require("@jitsi/electron-sdk");
+} = require("@w6s/jitsi-electron-sdk");
 
 const api = new JitsiMeetExternalAPI(...);
 setupPowerMonitorRender(api);

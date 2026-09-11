@@ -3,6 +3,7 @@ module.exports = {
     ASPECT_RATIO: 16 / 9,
     EVENTS: {
         MOVE: 'aot-move',
+        SET_FRAME_BRIDGE: 'aot-set-frame-bridge',
         UPDATE_STATE: 'aot-update-state',
     },
     EXTERNAL_EVENTS: {

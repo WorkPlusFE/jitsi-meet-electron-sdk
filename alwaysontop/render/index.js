@@ -1,4 +1,4 @@
-/* global __dirname */
+/* global __dirname, process */
 
 const { EventEmitter } = require('events');
 const { ipcRenderer } = require('electron');
@@ -6,6 +6,8 @@ const path = require('path');
 const { logInfo, setLogger } = require('./utils');
 
 const { EVENTS, STATES, AOT_WINDOW_NAME, EXTERNAL_EVENTS, EVENTS_CHANNEL } = require('../constants');
+
+const MIN_FRAME_BRIDGE_ELECTRON_MAJOR = 39;
 
 /**
  * Sends an update state event to main process
@@ -15,6 +17,10 @@ const { EVENTS, STATES, AOT_WINDOW_NAME, EXTERNAL_EVENTS, EVENTS_CHANNEL } = req
     logInfo(`sending ${state} state update to main process`);
 
     ipcRenderer.send(EVENTS_CHANNEL, { name: EVENTS.UPDATE_STATE, state } );
+};
+
+const sendFrameBridgeUpdate = enabled => {
+    ipcRenderer.send(EVENTS_CHANNEL, { name: EVENTS.SET_FRAME_BRIDGE, enabled });
 };
 
 /**
@@ -46,6 +52,7 @@ class AlwaysOnTop extends EventEmitter {
         this._api = api;
         this._showOnPrejoin = showOnPrejoin;
         this._joined = false;
+        this._useFrameBridge = false;
         this._disposeWindow = this._disposeWindow.bind(this);
         this._dismiss = this._dismiss.bind(this);
         this._onConferenceJoined = this._onConferenceJoined.bind(this);
@@ -131,6 +138,10 @@ class AlwaysOnTop extends EventEmitter {
      * @returns {void}
      */
      _updateLargeVideoSrc() {
+         if (this._useFrameBridge) {
+             return;
+         }
+
          // adding a small timeout before updating media seems to fix the black screen preview
          // in the bottom right corner during screen share.
          setTimeout(() => {
@@ -169,6 +180,66 @@ class AlwaysOnTop extends EventEmitter {
         sendStateUpdate(STATES.SHOW_MAIN_WINDOW);
     }
 
+    _isCrossOriginAccessError(error) {
+        const message = error && error.message ? error.message : String(error);
+
+        return Boolean(error && error.name === 'SecurityError'
+            || /cross-origin frame|Blocked a frame/i.test(message));
+    }
+
+    _shouldUseFrameBridge() {
+        const electronMajor = Number.parseInt(process.versions.electron, 10);
+
+        if (electronMajor < MIN_FRAME_BRIDGE_ELECTRON_MAJOR) {
+            return false;
+        }
+
+        try {
+            this._api._getAlwaysOnTopResources();
+            // Force the same cross-frame video access used by the native path.
+            Reflect.get(this, '_jitsiMeetLargeVideo');
+            return false;
+        } catch (error) {
+            if (this._isCrossOriginAccessError(error)) {
+                logInfo(`using frame bridge for Electron ${process.versions.electron}`);
+                return true;
+            }
+
+            throw error;
+        }
+    }
+
+    _createFrameBridgeApi(resources, popupState) {
+        const originalApi = this._api;
+        const methodCache = new Map();
+
+        return new Proxy(originalApi, {
+            get(target, key) {
+                if (key === '_getAlwaysOnTopResources') {
+                    return () => resources.slice();
+                }
+
+                // The server AOT UI uses these helpers to choose between video
+                // and its avatar fallback. Video pixels arrive from the main process.
+                if (key === '_getLargeVideo') {
+                    return () => popupState.hasVideo ? { readyState: 4 } : undefined;
+                }
+                if (key === '_getPrejoinVideo') {
+                    return () => undefined;
+                }
+
+                const value = Reflect.get(target, key, target);
+
+                if (typeof value !== 'function') return value;
+                if (!methodCache.has(key)) {
+                    methodCache.set(key, (...args) => value.apply(target, args));
+                }
+
+                return methodCache.get(key);
+            }
+        });
+    }
+
     /**
      * Opens a new window
      */
@@ -178,9 +249,26 @@ class AlwaysOnTop extends EventEmitter {
         this._api.on('prejoinVideoChanged', this._updateLargeVideoSrc);
         this._api.on('videoMuteStatusChanged', this._updateLargeVideoSrc);
 
+        this._useFrameBridge = this._shouldUseFrameBridge();
+
+        let popupApi = this._api;
+        let popupState;
+
+        if (this._useFrameBridge) {
+            const iframe = this._api.getIFrame();
+            const frameUrl = iframe && iframe.src;
+            const resources = frameUrl
+                ? [ 'css/all.css', 'libs/alwaysontop.min.js' ].map(resource =>
+                    new URL(resource, frameUrl).href)
+                : [];
+
+            popupState = { hasVideo: false };
+            popupApi = this._createFrameBridgeApi(resources, popupState);
+        }
+
         this._aotWindow = window.open('', `${AOT_WINDOW_NAME}-${magic}`);
         this._aotWindow.alwaysOnTop = {
-            api: this._api,
+            api: popupApi,
             dismiss: this._dismiss,
             /**
              * Custom implementation for window move.
@@ -201,10 +289,43 @@ class AlwaysOnTop extends EventEmitter {
         // Add the markup for the JS to manipulate and load the CSS.
         this._aotWindow.document.body.innerHTML = `
             <div id="react"></div>
-            <video autoplay="" id="video" style="transform: none;" muted></video>
+            ${this._useFrameBridge ? '<img id="aot-frame" alt="" />' : ''}
+            <video autoplay="" id="video" style="${this._useFrameBridge ? 'display: none;' : 'transform: none;'}" muted></video>
             <div class="dismiss"></div>
             <link rel="stylesheet" href="file://${cssPath}">
+            ${this._useFrameBridge ? `<style>
+                #aot-frame {
+                    background: #000;
+                    height: 100%;
+                    left: 0;
+                    object-fit: cover;
+                    position: fixed;
+                    top: 0;
+                    width: 100%;
+                    z-index: 0;
+                }
+                #react { position: relative; z-index: 1; }
+                .dismiss { z-index: 2; }
+            </style>` : ''}
         `;
+
+        if (this._useFrameBridge) {
+            this._aotWindow.__setAotFrame = frame => {
+                const image = this._aotWindow
+                    && this._aotWindow.document.getElementById('aot-frame');
+
+                if (!image || !frame) return;
+
+                const changed = popupState.hasVideo !== frame.hasVideo;
+
+                popupState.hasVideo = frame.hasVideo;
+                image.style.display = frame.hasVideo ? 'block' : 'none';
+                if (frame.dataUrl) image.src = frame.dataUrl;
+                if (changed) this._api.emit('largeVideoChanged');
+            };
+        }
+
+        sendFrameBridgeUpdate(this._useFrameBridge);
 
         // JS must be loaded through a script tag, as setting it through
         // inner HTML maybe not trigger script load.
@@ -246,6 +367,8 @@ class AlwaysOnTop extends EventEmitter {
      _disposeWindow() {
         logInfo('disposing window');
 
+        sendFrameBridgeUpdate(false);
+        this._useFrameBridge = false;
         this._joined = false;
         this._api.removeListener('largeVideoChanged', this._updateLargeVideoSrc);
         this._api.removeListener('prejoinVideoChanged', this._updateLargeVideoSrc);

@@ -3,6 +3,7 @@ module.exports = {
     ASPECT_RATIO: 16 / 9,
     EVENTS: {
         MOVE: 'aot-move',
+        RESIZE: 'aot-resize',
         SET_FRAME_BRIDGE: 'aot-set-frame-bridge',
         UPDATE_STATE: 'aot-update-state',
     },
@@ -13,8 +14,9 @@ module.exports = {
     },
     EVENTS_CHANNEL: 'aot-events-channel',
     SIZE: {
-        width: 320,
-        height: 180
+        width: 150,
+        // One participant (60px) plus 10px top and bottom list padding.
+        height: 80
     },
     STATES: {
         CLOSE: 'aot-close',

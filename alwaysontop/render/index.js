@@ -37,6 +37,17 @@ const move = (x, y, initialSize) => {
     });
 };
 
+/**
+ * Sends a resize command to the main process.
+ * @param {Number} height
+ */
+const resize = height => {
+    ipcRenderer.send(EVENTS_CHANNEL, {
+        name: EVENTS.RESIZE,
+        height
+    });
+};
+
 class AlwaysOnTop extends EventEmitter {
     /**
      * Creates new instance.
@@ -279,6 +290,7 @@ class AlwaysOnTop extends EventEmitter {
              * @param y
              */
             move,
+            resize,
             ondblclick: this._switchToMainWindow,
             onload: this._updateLargeVideoSrc
         };

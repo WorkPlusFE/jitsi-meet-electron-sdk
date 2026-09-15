@@ -2,10 +2,8 @@
 
 const crypto = require('crypto');
 const electron = require('electron');
-const os = require('os');
 const { BrowserWindow, ipcMain } = electron;
 
-const { windowsEnableScreenProtection } = require('../../helpers/functions');
 const { EVENTS, STATES, AOT_WINDOW_NAME, EVENTS_CHANNEL } = require('../constants');
 const {
     getPosition,
@@ -210,10 +208,9 @@ const handleWindowCreated = window => {
     // Required to allow the window to be rendered on top of full screen apps
     aotWindow.setAlwaysOnTop(true, 'screen-saver');
 
-    if (os.platform() !== 'win32' || windowsEnableScreenProtection(os.release())) {
-        // Avoid this window from being captured.
-        aotWindow.setContentProtection(true);
-    }
+    // Content protection makes the AoT window appear black in screenshots,
+    // screen mirroring and remote debugging sessions, so keep it visible for
+    // local debugging.
 
     aotWindow.once('ready-to-show', () => {
         aotWindow.show();
@@ -231,6 +228,7 @@ const handleWindowCreated = window => {
         logInfo('close aot because renderer crashed', details);
         aotWindow.close();
     });
+
 
     setAspectRatioToResizeableWindow(aotWindow);
 };
@@ -368,6 +366,9 @@ const onAotEvent = (event, { name, ...rest }) => {
         case EVENTS.MOVE:
             handleMove(rest.position, rest.initialSize);
             break;
+        case EVENTS.RESIZE:
+            handleResize(rest.height);
+            break;
     }
 };
 
@@ -432,6 +433,21 @@ const handleMove = (position, initialSize) => {
         width,
         height
     });
+};
+
+/**
+ * Resizes the AOT window to match the participant list height.
+ * @param {number} height
+ */
+const handleResize = height => {
+    const aotWindow = getAotWindow();
+
+    if (!windowExists(aotWindow) || !Number.isFinite(height) || height <= 0) {
+        return;
+    }
+
+    const [ width ] = aotWindow.getSize();
+    aotWindow.setSize(width, Math.round(height));
 };
 
 const cleanup = () => {

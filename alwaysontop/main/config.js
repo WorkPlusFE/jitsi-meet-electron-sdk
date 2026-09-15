@@ -3,7 +3,7 @@ const { SIZE } = require("../constants");
 module.exports = {
     backgroundColor: 'transparent',
     minWidth: SIZE.width,
-    minHeight: SIZE.height,
+    minHeight: 1,
     minimizable: false,
     maximizable: false,
     resizable: true,

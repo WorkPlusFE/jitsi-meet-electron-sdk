@@ -6,7 +6,7 @@ module.exports = {
     minHeight: 1,
     minimizable: false,
     maximizable: false,
-    resizable: true,
+    resizable: false,
     alwaysOnTop: true,
     fullscreen: false,
     fullscreenable: false,

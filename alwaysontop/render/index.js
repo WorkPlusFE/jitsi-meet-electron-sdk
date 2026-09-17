@@ -291,15 +291,25 @@ class AlwaysOnTop extends EventEmitter {
              */
             move,
             resize,
+            toggleCollapse: () => ipcRenderer.send(EVENTS_CHANNEL, { name: EVENTS.TOGGLE_COLLAPSE }),
             ondblclick: this._switchToMainWindow,
             onload: this._updateLargeVideoSrc
         };
 
         const cssPath = path.join(__dirname, './alwaysontop.css');
         const jsPath = path.join(__dirname, './alwaysontop.js');
+        const collapseIconPath = path.join(__dirname, './shouqi.svg');
+        const expandIconPath = path.join(__dirname, './left-arrow.svg');
 
         // Add the markup for the JS to manipulate and load the CSS.
         this._aotWindow.document.body.innerHTML = `
+            <div class="aot-header">
+                <button class="collapse-toggle" type="button" aria-label="收起" title="收起"
+                    data-collapse-icon="file://${collapseIconPath}"
+                    data-expand-icon="file://${expandIconPath}">
+                    <img alt="" src="file://${collapseIconPath}" />
+                </button>
+            </div>
             <div id="react"></div>
             ${this._useFrameBridge ? '<img id="aot-frame" alt="" />' : ''}
             <video autoplay="" id="video" style="${this._useFrameBridge ? 'display: none;' : 'transform: none;'}" muted></video>

@@ -4,7 +4,8 @@ const {
     resize,
     ondblclick,
     onload,
-    dismiss
+    dismiss,
+    toggleCollapse
 } = window.alwaysOnTop;
 
 let initialSize;
@@ -14,13 +15,61 @@ if (dismissButton) {
     dismissButton.addEventListener('click', dismiss);
 }
 
+const collapseButton = document.querySelector('.collapse-toggle');
+if (collapseButton) {
+    collapseButton.addEventListener('mousedown', event => {
+        event.stopPropagation();
+    });
+    collapseButton.addEventListener('dblclick', event => {
+        event.stopPropagation();
+    });
+    collapseButton.addEventListener('click', event => {
+        event.stopPropagation();
+        const isCollapsed = document.body.classList.toggle('is-collapsed');
+        const collapseIcon = collapseButton.getAttribute('data-collapse-icon');
+        const expandIcon = collapseButton.getAttribute('data-expand-icon');
+        const icon = collapseButton.querySelector('img');
+
+        collapseButton.setAttribute('aria-label', isCollapsed ? '展开' : '收起');
+        collapseButton.setAttribute('title', isCollapsed ? '展开' : '收起');
+        if (icon) {
+            icon.src = isCollapsed ? expandIcon : collapseIcon;
+        }
+        toggleCollapse();
+    });
+}
+
 window.addEventListener('dblclick', ondblclick);
 
 onload();
 setupDraggable();
 setupParticipantHeightObserver();
+applyParticipantListLayoutStyles();
 // load all resources from meet
 api._getAlwaysOnTopResources().forEach(src => loadFile(src));
+
+function applyParticipantListLayoutStyles() {
+    [document.getElementById('react'), document.getElementById('alwaysOnTop')].forEach(element => {
+        if (!element) {
+            return;
+        }
+
+        element.style.position = 'static';
+        element.style.top = 'auto';
+    });
+
+    const participantList = document.querySelector('.always-on-top-participants');
+
+    if (!participantList) {
+        return;
+    }
+
+    participantList.style.boxSizing = 'border-box';
+    participantList.style.marginTop = '0';
+    participantList.style.paddingTop = '10px';
+    participantList.style.position = 'static';
+    participantList.style.top = 'auto';
+}
 
 
 /**
@@ -73,6 +122,8 @@ function drag(mouseMoveEvent) {
  */
 function setupParticipantHeightObserver() {
     const updateHeight = () => {
+        applyParticipantListLayoutStyles();
+
         const participantList = document.querySelector('.always-on-top-participants');
         const participants = Array.from(document.querySelectorAll('.always-on-top-participant'))
             .slice(0, 5);

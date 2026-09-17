@@ -10,6 +10,18 @@ body, html {
 }
 body {
     background: #474747;
+    border-radius: 0;
+}
+
+.aot-header {
+    align-items: center;
+    background: #000;
+    box-sizing: border-box;
+    display: flex;
+    height: 30px;
+    justify-content: flex-end;
+    padding: 0 4px;
+    width: 100%;
 }
 
 /* The compact AOT window only displays the participant list. */
@@ -20,11 +32,78 @@ body {
     display: none !important;
 }
 
+.collapse-toggle {
+    align-items: center;
+    background: #000;
+    border: 0;
+    border-radius: 0;
+    cursor: pointer;
+    display: flex;
+    height: 28px;
+    justify-content: center;
+    opacity: 0.92;
+    padding: 0;
+    width: 34px;
+    z-index: 3;
+}
+
+.collapse-toggle img {
+    display: block;
+    height: 20px;
+    width: 20px;
+}
+
+.collapse-toggle:hover {
+    opacity: 1;
+}
+
+body.is-collapsed .collapse-toggle {
+    border-radius: 20px 0 0 20px;
+    box-sizing: border-box;
+    height: 40px;
+    justify-content: flex-start;
+    padding-left: 8px;
+    width: 50px;
+}
+
+body.is-collapsed .aot-header {
+    height: 40px;
+    padding: 0;
+    width: 50px;
+}
+
+body.is-collapsed #react,
+body.is-collapsed #alwaysOnTop,
+body.is-collapsed .always-on-top-participants,
+body.is-collapsed #aot-frame,
+body.is-collapsed #video {
+    display: none !important;
+}
+
+body.is-collapsed .collapse-toggle img {
+    height: 24px;
+    margin-left: 0;
+    width: 24px;
+}
+
 #react,
 #alwaysOnTop,
 .always-on-top-participants {
     height: auto;
     width: 100%;
+}
+
+#react,
+#alwaysOnTop {
+    position: static !important;
+}
+
+.always-on-top-participants {
+    box-sizing: border-box;
+    margin-top: 0 !important;
+    padding-top: 10px !important;
+    position: static !important;
+    top: auto !important;
 }
 video {
     width: 100%;

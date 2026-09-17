@@ -42,9 +42,15 @@ let _existingWindowOpenHandler;
 let frameBridgeEnabled = false;
 let framePumpTimer;
 let framePumpBusy = false;
+let isCollapsed = false;
+let restoreBounds;
 
 const FRAME_INTERVAL = 160;
 const MIN_FRAME_BRIDGE_ELECTRON_MAJOR = 39;
+const COLLAPSED_WIDTH = 50;
+const COLLAPSED_HEIGHT = 40;
+const COLLAPSED_RIGHT_OFFSET = -15;
+const HEADER_HEIGHT = 30;
 
 /**
  * The aot window instance
@@ -229,6 +235,10 @@ const handleWindowCreated = window => {
         aotWindow.close();
     });
 
+    aotWindow.on('closed', () => {
+        isCollapsed = false;
+        restoreBounds = undefined;
+    });
 
     setAspectRatioToResizeableWindow(aotWindow);
 };
@@ -346,6 +356,9 @@ const closeWindow = () => {
         logInfo('closing aot window');
         aotWindow.close();
     }
+
+    isCollapsed = false;
+    restoreBounds = undefined;
 };
 
 /**
@@ -369,6 +382,9 @@ const onAotEvent = (event, { name, ...rest }) => {
         case EVENTS.RESIZE:
             handleResize(rest.height);
             break;
+        case EVENTS.TOGGLE_COLLAPSE:
+            handleToggleCollapse();
+            break;
     }
 };
 
@@ -385,6 +401,9 @@ const handleStateChange = state => {
             break;
         case STATES.CLOSE:
             removeMainWindowHandlers();
+            if (isCollapsed && restoreBounds && windowExists(getAotWindow())) {
+                getAotWindow().setBounds(restoreBounds);
+            }
             savePosition(getAotWindow());
             resetSize();
             closeWindow();
@@ -420,7 +439,7 @@ const handleStateChange = state => {
 const handleMove = (position, initialSize) => {
     const aotWindow = getAotWindow();
 
-    if (!windowExists(aotWindow)) {
+    if (!windowExists(aotWindow) || isCollapsed) {
         return;
     }
 
@@ -447,7 +466,51 @@ const handleResize = height => {
     }
 
     const [ width ] = aotWindow.getSize();
-    aotWindow.setSize(width, Math.round(height));
+    const expandedHeight = Math.round(height) + HEADER_HEIGHT;
+
+    if (isCollapsed && restoreBounds) {
+        restoreBounds.height = expandedHeight;
+        return;
+    }
+
+    aotWindow.setSize(width, expandedHeight);
+};
+
+/**
+ * Collapses the AOT window to the right screen edge, or restores the last
+ * expanded bounds.
+ */
+const handleToggleCollapse = () => {
+    const aotWindow = getAotWindow();
+
+    if (!windowExists(aotWindow)) {
+        return;
+    }
+
+    if (isCollapsed) {
+        if (restoreBounds) {
+            aotWindow.setMinimumSize(aotConfig.minWidth, aotConfig.minHeight);
+            aotWindow.setBounds(restoreBounds);
+        }
+
+        isCollapsed = false;
+        restoreBounds = undefined;
+        return;
+    }
+
+    const bounds = aotWindow.getBounds();
+    const workArea = electron.screen.getDisplayMatching(bounds).workArea;
+    const x = workArea.x + workArea.width - COLLAPSED_WIDTH - COLLAPSED_RIGHT_OFFSET;
+
+    restoreBounds = bounds;
+    isCollapsed = true;
+    aotWindow.setMinimumSize(COLLAPSED_WIDTH, COLLAPSED_HEIGHT);
+    aotWindow.setBounds({
+        height: COLLAPSED_HEIGHT,
+        width: COLLAPSED_WIDTH,
+        x,
+        y: bounds.y
+    });
 };
 
 const cleanup = () => {

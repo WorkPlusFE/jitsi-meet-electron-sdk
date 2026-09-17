@@ -2,6 +2,7 @@ module.exports = {
     AOT_WINDOW_NAME: 'AlwaysOnTop',
     ASPECT_RATIO: 16 / 9,
     EVENTS: {
+        TOGGLE_COLLAPSE: 'aot-toggle-collapse',
         MOVE: 'aot-move',
         RESIZE: 'aot-resize',
         SET_FRAME_BRIDGE: 'aot-set-frame-bridge',

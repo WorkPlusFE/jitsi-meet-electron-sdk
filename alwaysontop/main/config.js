@@ -15,6 +15,9 @@ module.exports = {
     frame: false,
     show: false,
     webPreferences: {
-        contextIsolation: false
+        contextIsolation: false,
+        // The renderer populates this about:blank window through its WindowProxy.
+        // Electron 45 requires matching the unsandboxed meeting opener explicitly.
+        sandbox: false
     }
 };

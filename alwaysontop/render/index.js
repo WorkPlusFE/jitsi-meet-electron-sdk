@@ -3,7 +3,7 @@
 const { EventEmitter } = require('events');
 const { ipcRenderer } = require('electron');
 const path = require('path');
-const { logInfo, setLogger } = require('./utils');
+const { logError, logInfo, setLogger } = require('./utils');
 
 const { EVENTS, STATES, AOT_WINDOW_NAME, EXTERNAL_EVENTS, EVENTS_CHANNEL } = require('../constants');
 
@@ -278,6 +278,10 @@ class AlwaysOnTop extends EventEmitter {
         }
 
         this._aotWindow = window.open('', `${AOT_WINDOW_NAME}-${magic}`);
+        if (!this._aotWindow) {
+            throw new Error('Unable to access the always-on-top window; check the popup sandbox configuration');
+        }
+
         this._aotWindow.alwaysOnTop = {
             api: popupApi,
             dismiss: this._dismiss,
@@ -451,10 +455,17 @@ class AlwaysOnTop extends EventEmitter {
             case STATES.OPEN:
                 try {
                     this._openNewWindow(data.aotMagic);
-                } catch(e) {
+                } catch(error) {
+                    logError(error);
                     this._api.removeListener('largeVideoChanged', this._updateLargeVideoSrc);
                     this._api.removeListener('prejoinVideoChanged', this._updateLargeVideoSrc);
                     this._api.removeListener('videoMuteStatusChanged', this._updateLargeVideoSrc);
+                    sendFrameBridgeUpdate(false);
+                    this._useFrameBridge = false;
+                    this._aotWindow = null;
+                    // The native window may exist even when window.open() returned null.
+                    // Dismiss only the popup so conference listeners remain available for retry.
+                    sendStateUpdate(STATES.DISMISS);
                 }
                 break;
             case STATES.SHOW:

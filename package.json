@@ -1,6 +1,6 @@
 {
   "name": "@w6s/jitsi-electron-sdk",
-  "version": "6.0.52",
+  "version": "6.0.53",
   "description": "WorkPlus fork of the Jitsi Meet Electron SDK",
   "main": "index.js",
   "files": [
